@@ -83,7 +83,7 @@ copy the following into emonhub.conf:
 
 // Include EmonTxV4_config.ino in the same directory for settings functions & data
 
-RFM69 rf;
+//RFM69 rf;
 
 #define NUM_V_CHANNELS 3                                   // SET TO 1 FOR SINGLE PHASE
 #define NUM_I_CHANNELS 6
@@ -128,9 +128,9 @@ uint16_t eepromSig = 0x0020;                               // oemEProm signature
   extern EEWL EVmem;
 #endif
 
-bool  USA=false;
+bool  USA=true;
 
-bool calibration_enable = true;                           // Enable on-line calibration when running. 
+bool calibration_enable = false;                           // Enable on-line calibration when running. 
                                                            // For safety, thus MUST default to false. (Required due to faulty ESP8266 software.)
 
 //----------------------------emonTx V4 hard-wired connections-----------------------------------
@@ -138,10 +138,71 @@ const byte LEDpin      = PIN_PB2;  // emonTx V4 LED
 const byte DIP_switch1 = PIN_PA4;  // RF node ID (default no change in node ID, switch on for nodeID + 1) switch off D8 is HIGH from internal pullup
 const byte DIP_switch2 = PIN_PA5;  // Voltage selection 240 / 120 V AC (default switch off 240V)  - switch off D9 is HIGH from internal pullup
 
+//----------------------------------MQTT SETUP---------------------------------------------------
+
+#include <SPI.h>
+#include <Ethernet.h>
+#include <PubSubClient.h>
+
+#define SSpin PIN_PB5
+#define MOSIpin PIN_PC0
+#define MISOpin PIN_PC1
+#define SCKpin PIN_PC2
+
+
+byte mac[]    = {  0x00, 0xE0, 0x4C, 0x53, 0x45, 0x59 };
+
+IPAddress ip(192, 168, 77, 63);
+IPAddress dns(8, 8, 8, 8);
+IPAddress server(192, 168, 77, 1);
+
+void callback(char* topic, byte* payload, unsigned int length) {
+  Serial.print("Message arrived [");
+  Serial.print(topic);
+  Serial.print("] ");
+  for (int i=0;i<length;i++) {
+    Serial.print((char)payload[i]);
+  }
+  Serial.println();
+}
+
+EthernetClient ethClient;
+PubSubClient client(ethClient);
+
+unsigned long previousMillis = 0;
+const long interval = 5000;
+
+void reconnect() {
+  // Loop until we're reconnected
+  //while (!client.connected()) {
+    unsigned long currentMillis = millis();
+    if (currentMillis - previousMillis >= interval) {
+        Serial.print("Attempting MQTT connection...");
+        // Attempt to connect
+        if (client.connect("emonTxV4Client")) {
+          Serial.println("connected");
+          // Once connected, publish an announcement...
+          client.publish("emontxV4","connected");
+          // ... and resubscribe
+          //client.subscribe("inTopic");
+        } else {
+          Serial.print("failed, rc=");
+          Serial.print(client.state());
+          Serial.println(" try again in 5 seconds");
+          previousMillis = currentMillis;
+          // Wait 5 seconds before retrying
+          //delay(5000);
+        }
+    }
+  //}
+}
+
+
 //----------------------------------------Setup--------------------------------------------------
 void setup() 
 {  
   //wdt_enable(WDTO_8S);
+  SPI.pins(MOSIpin, MISOpin, SCKpin);
   
   pinMode(LEDpin, OUTPUT);
   digitalWrite(LEDpin,HIGH);
@@ -205,16 +266,16 @@ void setup()
   if (EEProm.rf_on)
   {
     #if RadioFormat == RFM69_JEELIB_CLASSIC
-      rf.format(RFM69_JEELIB_CLASSIC);
+      //rf.format(RFM69_JEELIB_CLASSIC);
     #endif
     
     // Frequency is currently hardcoded to 433Mhz in library
     #if RadioFormat == RFM69_LOW_POWER_LABS
-    rf.setPins(PIN_PB5,PIN_PC0,PIN_PC1,PIN_PC2);
+    //rf.setPins(PIN_PB5,PIN_PC0,PIN_PC1,PIN_PC2);
     #endif
-    rf.initialize(RF69_433MHZ, EEProm.nodeID, EEProm.networkGroup); 
-    rf.encrypt("89txbe4p8aik5kt3");                                    // ignored if jeelib classic
-    delay(random(EEProm.nodeID * 20));                                 // try to avoid r.f. collisions at start-up
+    //rf.initialize(RF69_433MHZ, EEProm.nodeID, EEProm.networkGroup); 
+    //rf.encrypt("89txbe4p8aik5kt3");                                    // ignored if jeelib classic
+    //delay(random(EEProm.nodeID * 20));                                 // try to avoid r.f. collisions at start-up
   }
   
   // ---------------------------------------------------------------------------------------
@@ -255,12 +316,12 @@ void setup()
 
   #if NUM_V_CHANNELS == 3
     
-    EmonLibDB_set_pInput(1, 1); // Phase 1
-    EmonLibDB_set_pInput(2, 2); // Phase 2
-    EmonLibDB_set_pInput(3, 3); // Phase 3
-    EmonLibDB_set_pInput(4, 1); // Phase 1
-    EmonLibDB_set_pInput(5, 2); // Phase 2
-    EmonLibDB_set_pInput(6, 3); // Phase 3
+    EmonLibDB_set_pInput(1, 1); // Main Phase 1
+    EmonLibDB_set_pInput(2, 2); // Main Phase 2
+    EmonLibDB_set_pInput(3, 1); // Generator Phase 1
+    EmonLibDB_set_pInput(4, 2); // Generator Phase 2
+    EmonLibDB_set_pInput(5, 1, 2); // Dryer
+    EmonLibDB_set_pInput(6, 1); // Furnace
     /*
     EmonLibDB_set_pInput(1, 1, 2);               // CT1 between V1 & V2    
     EmonLibDB_set_pInput(2, 2, 3);               // CT2 between V2 & V3  (etc)
@@ -305,13 +366,13 @@ void setup()
   * The 'Analogue' input is not available if an extender card is fitted.      *
   ****************************************************************************/
  
-  EmonLibDB_setPulseEnable(true);              // Enable counting on "Pulse" input
-  EmonLibDB_setPulseMinPeriod(20);             // Contact bounce must not last longer than 20 ms
+  //EmonLibDB_setPulseEnable(true);              // Enable counting on "Pulse" input
+  //EmonLibDB_setPulseMinPeriod(20);             // Contact bounce must not last longer than 20 ms
 
-  EmonLibDB_setPulseEnable(2, false);           // Enable counting on "Digital" input
+  //EmonLibDB_setPulseEnable(2, false);           // Enable counting on "Digital" input
   // EmonLibDB_setPulseMinPeriod(2, 20, FALLING); // Contact bounce must not last longer than 20 ms, trigger on the falling edge
 
-  EmonLibDB_setPulseEnable(3, false);          // Disable counting on "Analog" input
+  //EmonLibDB_setPulseEnable(3, false);          // Disable counting on "Analog" input
   // EmonLibDB_setPulseMinPeriod(3, 0, RISING);   // No contact bounce expected, trigger on the rising edge
   // EmonLibDB_setPulseCount(3, 123);             // Initialise the pulse count for this to 123 counts
 
@@ -337,16 +398,27 @@ void setup()
   EVmem.dump_control();
   EVmem.dump_buffer();  
 #endif
+  
+  Ethernet.init(SSpin);
+  client.setServer(server, 1883);
+  client.setCallback(callback);
+  
+  
   EmonLibDB_Init();                                                    // Start continuous monitoring.
   emontx.Msg = 0;
     
   // Speed up startup by making first reading 2s
   EmonLibDB_datalogPeriod(2.0);
+
 }
 
 void loop()             
 {
   getSettings();
+
+  if (!client.connected()) {
+    reconnect();
+  } else client.loop();
   
   if (EmonLibDB_Ready())   
   {
@@ -362,7 +434,7 @@ void loop()
         Serial.print(F("AC missing - Apparent Power calc enabled, assuming ")); Serial.print(EEProm.assumedVrms); Serial.println(F(" V"));
       }*/
     }
-    delay(5);
+    //delay(5);
     #endif
 
     emontx.Msg++;
@@ -381,20 +453,20 @@ void loop()
         emontx.E[ch] = EmonLibDB_getWattHour(ch+1);
     }
     
-    emontx.pulse = EmonLibDB_getPulseCount(1);
+    //emontx.pulse = EmonLibDB_getPulseCount(1);
         
-    if (EEProm.rf_on) {
-      PayloadTX tmp = emontx;
+    // if (EEProm.rf_on) {
+    //   PayloadTX tmp = emontx;
 
-      #if RadioFormat == RFM69_LOW_POWER_LABS
-        rf.sendWithRetry(5,(byte *)&tmp, sizeof(tmp));
-      #else
-        rf.send(0, (byte *)&tmp, sizeof(tmp));
-      #endif
+    //   #if RadioFormat == RFM69_LOW_POWER_LABS
+    //     rf.sendWithRetry(5,(byte *)&tmp, sizeof(tmp));
+    //   #else
+    //     rf.send(0, (byte *)&tmp, sizeof(tmp));
+    //   #endif
       
-      delay(50);
-    }
-
+    //   delay(50);
+    // }
+    /*
     if (EEProm.json_enabled) {
       // ---------------------------------------------------------------------
       // JSON Format
@@ -455,13 +527,62 @@ void loop()
         }
         delay(80);
       }
+    } */
+    if (client.connected()) {
+      char cstr[30];
+      char chs[3];
+      char topic[20];
+      for (byte ch=0; ch<NUM_V_CHANNELS; ch++) {
+        //Serial.print(F(",V")); Serial.print(ch+1); Serial.print(":"); Serial.print(emontx.V[ch]*0.01);
+        itoa(ch, chs, 10);
+        itoa(emontx.V[ch], cstr, 10);
+        strcpy(topic, "emonTx4/V");
+        strcat(topic, chs);
+        client.publish(topic, cstr);
+      }
+      for (byte ch=0; ch<NUM_I_CHANNELS; ch++) {
+        //Serial.print(F(",P")); Serial.print(ch+1); Serial.print(":"); Serial.print(emontx.P[ch]);
+        itoa(ch, chs, 10);
+        itoa(emontx.P[ch], cstr, 10);
+        strcpy(topic, "emonTx4/P");
+        strcat(topic, chs);
+        client.publish(topic, cstr);
+      }
+      for (byte ch=0; ch<NUM_I_CHANNELS; ch++) {
+        //Serial.print(F(",E")); Serial.print(ch+1); Serial.print(":"); Serial.print(emontx.E[ch]);
+        itoa(ch, chs, 10);
+        itoa(emontx.E[ch], cstr, 10);
+        strcpy(topic, "emonTx4/E");
+        strcat(topic, chs);
+        client.publish(topic, cstr);
+      }
+      for (byte ch=0; ch<NUM_I_CHANNELS; ch++) {
+        //Serial.print(F(",I")); Serial.print(ch+1); Serial.print(":"); Serial.print(EmonLibDB_getIrms(ch+1),3);
+        itoa(ch, chs, 10);
+        itoa(int(round(EmonLibDB_getIrms(ch+1)*1000.0)), cstr, 10);
+        strcpy(topic, "emonTx4/I");
+        strcat(topic, chs);
+        client.publish(topic, cstr);
+      }
+      for (byte ch=0; ch<NUM_I_CHANNELS; ch++) {
+        //Serial.print(F(",pf")); Serial.print(ch+1); Serial.print(":"); Serial.print(EmonLibDB_getPF(ch+1),4);
+        itoa(ch, chs, 10);
+        itoa(int(round(EmonLibDB_getPF(ch+1)*10000.0)), cstr, 10);
+        strcpy(topic, "emonTx4/pF");
+        strcat(topic, chs);
+        client.publish(topic, cstr);
+      }
+      itoa(int(round(EmonLibDB_getLineFrequency()*1000.0)), cstr, 10);
+      strcpy(topic, "emonTx4/Hz");
+      client.publish(topic, cstr);
+      EmonLibDB_getLineFrequency();
     }
-    digitalWrite(LEDpin,HIGH); delay(50);digitalWrite(LEDpin,LOW);
+    //digitalWrite(LEDpin,HIGH); delay(50);digitalWrite(LEDpin,LOW);
     // End of print out ----------------------------------------------------
     storeEValues(emontx.E[0],emontx.E[1],emontx.E[2],emontx.E[3],emontx.E[4],emontx.E[5],emontx.pulse);
   }
   wdt_reset();
-  delay(20);
+  //delay(20);
 }
 
 
