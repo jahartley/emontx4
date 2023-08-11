@@ -182,7 +182,7 @@ void reconnect() {
         if (client.connect("emonTxV4Client")) {
           Serial.println("connected");
           // Once connected, publish an announcement...
-          client.publish("emontxV4","connected");
+          client.publish("emonTx4","connected");
           // ... and resubscribe
           //client.subscribe("inTopic");
         } else {
@@ -532,6 +532,8 @@ void loop()
       char cstr[30];
       char chs[3];
       char topic[20];
+      itoa(emontx.Msg, cstr, 10);
+      client.publish("emonTx4/Msg", cstr);
       for (byte ch=0; ch<NUM_V_CHANNELS; ch++) {
         //Serial.print(F(",V")); Serial.print(ch+1); Serial.print(":"); Serial.print(emontx.V[ch]*0.01);
         itoa(ch, chs, 10);
