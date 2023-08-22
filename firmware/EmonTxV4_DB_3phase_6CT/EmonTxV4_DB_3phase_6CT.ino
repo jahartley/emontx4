@@ -152,6 +152,7 @@ const byte DIP_switch2 = PIN_PA5;  // Voltage selection 240 / 120 V AC (default 
 void setup() 
 {  
   //wdt_enable(WDTO_8S);
+  //delay for POE to power ethernet before starting...
   delay(10000);
   
   pinMode(LEDpin, OUTPUT);
